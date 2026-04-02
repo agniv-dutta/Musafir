@@ -1,67 +1,119 @@
 import requests
 from langchain.tools import tool
 
+def get_coordinates(destination: str) -> dict:
+    url = "https://nominatim.openstreetmap.org/search"
+    params = {
+        "q": destination,
+        "format": "json",
+        "limit": 1,
+        "addressdetails": 1
+    }
+    headers = {
+        "User-Agent": "TravelPlannerAgent/1.0"
+    }
+    
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if not data:
+            return None
+            
+        result = data[0]
+        address = result.get("address", {})
+        country_code = address.get("country_code", "")
+        
+        return {
+            "lat": result.get("lat"),
+            "lon": result.get("lon"),
+            "display_name": result.get("display_name"),
+            "country_code": country_code
+        }
+    except requests.exceptions.RequestException as e:
+        return {"error": f"Error fetching coordinates: {str(e)}"}
+    except Exception as e:
+        return {"error": f"Unexpected error in geocoding: {str(e)}"}
+
+def get_country_info(country_code: str) -> str:
+    if not country_code:
+        return "Country code is missing..."
+        
+    url = f"https://restcountries.com/v3.1/alpha/{country_code}"
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 404:
+            return f"Country info not found for code: {country_code}"
+        
+        response.raise_for_status()
+        data = response.json()
+        
+        if not data or not isinstance(data, list):
+            return "Unexpected data format from RestCountries API."
+            
+        country = data[0]
+        
+        # Extract fields
+        name = country.get("name", {}).get("common", "Unknown")
+        capitals = country.get("capital", ["Unknown"])
+        capital = capitals[0] if capitals else "Unknown"
+        
+        currencies_dict = country.get("currencies", {})
+        currency_list = []
+        for code, details in currencies_dict.items():
+            curr_name = details.get("name", "")
+            currency_list.append(f"{curr_name} ({code})")
+        currencies_str = ", ".join(currency_list) if currency_list else "Unknown"
+        
+        languages_dict = country.get("languages", {})
+        languages_str = ", ".join(languages_dict.values()) if languages_dict else "Unknown"
+        
+        region = country.get("region", "Unknown")
+        population = country.get("population", 0)
+        timezones_list = country.get("timezones", [])
+        timezones_str = ", ".join(timezones_list) if timezones_list else "Unknown"
+        
+        info_str = (
+            f"Country: {name}\n"
+            f"Capital: {capital}\n"
+            f"Region: {region}\n"
+            f"Population: {population:,}\n"
+            f"Currencies: {currencies_str}\n"
+            f"Languages: {languages_str}\n"
+            f"Timezones: {timezones_str}"
+        )
+        return info_str
+
+    except requests.exceptions.RequestException as e:
+        return f"Error fetching country info: {str(e)}"
+    except Exception as e:
+        return f"Unexpected error processing country info: {str(e)}"
+
 @tool
 def get_destination_info(destination: str) -> str:
+    """Uses Nominatim and RestCountries to get coordinates, country name, capital, currency, languages and timezone for a destination.
+    Always use this first when starting to gather information about a destination.
     """
-    Fetches key facts about a travel destination: country details,
-    currency, languages spoken, and geographic coordinates.
-    Use this first when the user names any destination.
-    Input: destination name (city or country, e.g. 'Paris' or 'Japan')
-    """
-    try:
-        # Step 1: Geocode the destination using Nominatim (free, no key)
-        geo_url = "https://nominatim.openstreetmap.org/search"
-        geo_params = {
-            "q": destination,
-            "format": "json",
-            "limit": 1,
-            "addressdetails": 1
-        }
-        headers = {"User-Agent": "TravelPlannerAgent/1.0"}
-        geo_response = requests.get(geo_url, params=geo_params, headers=headers)
-        geo_data = geo_response.json()
-
-        if not geo_data:
-            return f"Could not find location data for {destination}."
-
-        location = geo_data[0]
-        country_code = location.get("address", {}).get("country_code", "").upper()
-        lat = location["lat"]
-        lon = location["lon"]
-        display_name = location["display_name"]
-
-        # Step 2: Get country-level info via RestCountries (free, no key)
-        country_url = f"https://restcountries.com/v3.1/alpha/{country_code}"
-        country_response = requests.get(country_url)
-        country_data = country_response.json()[0]
-
-        country_name = country_data.get("name", {}).get("common", "Unknown")
-        capital = country_data.get("capital", ["Unknown"])[0]
-        currencies = ", ".join(
-            [f"{v['name']} ({k})" for k, v in country_data.get("currencies", {}).items()]
-        )
-        languages = ", ".join(country_data.get("languages", {}).values())
-        region = country_data.get("region", "Unknown")
-        population = f"{country_data.get('population', 0):,}"
-        timezones = ", ".join(country_data.get("timezones", []))
-
-        result = f"""
-Destination: {display_name}
-Coordinates: Lat {lat}, Lon {lon}
-Country: {country_name} ({region})
-Capital: {capital}
-Currency: {currencies}
-Languages: {languages}
-Population: {population}
-Timezones: {timezones}
-        """.strip()
-
-        return result
-
-    except Exception as e:
-        return f"Error fetching destination info: {str(e)}"
-
+    coord_data = get_coordinates(destination)
+    if coord_data is None:
+        return f"Error: Could not find coordinates for '{destination}'. Please try a more specific city or country name."
+    if "error" in coord_data:
+        return coord_data["error"]
+        
+    lat = coord_data.get("lat")
+    lon = coord_data.get("lon")
+    display_name = coord_data.get("display_name")
+    country_code = coord_data.get("country_code")
+    
+    country_info = get_country_info(country_code)
+    
+    result = f"Destination: {display_name}\n"
+    result += f"Coordinates: Lat {lat}, Lon {lon}\n\n"
+    result += "-- Country Details --\n"
+    result += country_info
+    
+    return result
 
 if __name__ == "__main__":
-    print(get_destination_info.run("Tokyo"))
+    print(get_destination_info.invoke("Tokyo"))
