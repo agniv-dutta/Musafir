@@ -32,7 +32,7 @@ pip install -r .\backend\requirements.txt
 
 ## Run the Backend Demo
 
-Runs the destination and weather tools (uses public APIs):
+Runs the destination, weather, currency conversion, and itinerary generation tools (uses public APIs):
 
 ```powershell
 cd c:\Projects\Wandr
