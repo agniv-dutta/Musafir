@@ -2,3 +2,6 @@ requests
 langchain
 langchain-groq
 python-dotenv
+icalendar
+fastapi
+uvicorn

@@ -156,7 +156,13 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({ result, isLoading, onR
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.3 }}
               >
-                <ItineraryTab finalAnswer={result!.finalAnswer} />
+                <ItineraryTab
+                  finalAnswer={result!.finalAnswer}
+                  destination={result!.destination}
+                  duration={result!.duration}
+                  budgetLevel={result!.budgetLevel}
+                  budgetCurrency={result!.budgetCurrency}
+                />
               </motion.div>
             )}
             {activeTab === 'weather' && (

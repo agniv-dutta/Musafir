@@ -1,55 +1,64 @@
 # Wandr
 
-A travel-planning agent backend with a placeholder frontend. The backend exposes tools for destination facts and 7-day weather forecasts.
+Wandr is a travel-planning agent with a FastAPI backend and a Vite + React frontend.
+It provides destination facts, weather forecasts, currency conversion, itinerary generation, transport pricing, food estimates, trip budget breakdowns, and calendar exports.
 
 ## Project Structure
 
 ```text
 Wandr/
   .env
-  .venv/
-  agent_core.py
-  main.py
-  requirements.txt
-  tools/
-    destination_tool.py
-    currency_tool.py
-    itinerary_tool.py
-    weather_tool.py
+  .env.example
   backend/
+    agent_core.py
+    server.py
+    requirements.txt
+    tools/
+      calendar_tool.py
+      transport_tool.py
+      food_price_tool.py
+      budget_tool.py
+      destination_tool.py
+      weather_tool.py
+      currency_tool.py
+      itinerary_tool.py
   frontend/
+    src/
+    package.json
 ```
 
-## Setup
-
-Use the root project folder, activate the existing virtual environment, and install dependencies:
+## Backend Setup
 
 ```powershell
-cd c:\Users\Agniv Dutta\Wandr
+cd c:\Projects\Wandr
+python -m venv .\.venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r backend\requirements.txt
 ```
 
-## Run The App
-
-Run the current app from the project root:
+## Run The Backend API
 
 ```powershell
-cd c:\Users\Agniv Dutta\Wandr
-python main.py
+cd c:\Projects\Wandr
+python backend\server.py
 ```
 
-## What To Expect
+## Run The Frontend
 
-The app will create a timestamped log file in `logs/`, then run three demo travel-planning prompts through the agent.
-
-For each query, it prints the user prompt, calls the configured tools, and then shows the agent's final answer. The tool outputs and agent steps are also visible because `verbose=True` is enabled in `agent_core.py`.
+```powershell
+cd c:\Projects\Wandr\frontend
+npm install
+npm run dev
+```
 
 ## Environment
 
-Keep API keys in the root `.env` file. Copy `.env.example` if you need a fresh template.
-By default the agent uses `llama-3.1-8b-instant`, and you can override it with `GROQ_MODEL` in `.env` if needed.
+Keep API keys in the root `.env` file. Copy `.env.example` for a template.
+Required keys:
+- `GROQ_API_KEY`
+- `EXCHANGE_RATE_API_KEY`
 
-## Frontend
+## Calendar Export
 
-`frontend/` is still a placeholder. It is not required to run the current agent demo.
+The planner can generate an `.ics` file and download it directly.
+Use the **Add to Calendar** button in the planner UI.

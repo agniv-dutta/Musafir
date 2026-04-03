@@ -49,5 +49,27 @@ def convert_currency(query: str) -> str:
         return f"Error during currency conversion: {str(e)}"
 
 
+def convert_amount(from_currency: str, to_currency: str, amount: float) -> dict:
+    """Return a structured conversion for internal API usage."""
+    API_KEY = os.getenv("EXCHANGE_RATE_API_KEY")
+    url = f"https://v6.exchangerate-api.com/v6/{API_KEY}/pair/{from_currency}/{to_currency}/{amount}"
+
+    response = requests.get(url)
+    data = response.json()
+
+    if data.get("result") != "success":
+        return {
+            "converted": 0.0,
+            "rate": 0.0,
+            "updated": data.get("time_last_update_utc", "N/A"),
+        }
+
+    return {
+        "converted": data["conversion_result"],
+        "rate": data["conversion_rate"],
+        "updated": data.get("time_last_update_utc", "N/A"),
+    }
+
+
 if __name__ == "__main__":
     print(convert_currency.run("1000 INR USD"))

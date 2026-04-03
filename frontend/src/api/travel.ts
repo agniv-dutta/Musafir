@@ -1,7 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
-import { TripFormData, TripResult, WeatherForecast, CurrencyConversion, DestinationInfo } from '../types';
+import { TripFormData, TripResult, WeatherForecast, CurrencyConversion, DestinationInfo, TransportPricesResponse, FoodEstimate, BudgetBreakdown } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -52,6 +52,8 @@ export const travelApi = {
       }>;
     }>('/api/plan', {
       destination: formData.destination,
+      origin: formData.origin,
+      startDate: formData.startDate,
       duration: formData.duration,
       budgetAmount: formData.budgetAmount,
       budgetCurrency: formData.budgetCurrency,
@@ -65,6 +67,10 @@ export const travelApi = {
       intermediateSteps: response.data.intermediate_steps,
       destination: formData.destination,
       duration: formData.duration,
+      budgetLevel: formData.budgetLevel,
+      origin: formData.origin,
+      startDate: formData.startDate,
+      budgetCurrency: formData.budgetCurrency,
     };
   },
 
@@ -109,6 +115,26 @@ export const travelApi = {
     const response = await api.get<DestinationInfo>('/api/destination', {
       params: { name },
     });
+    return response.data;
+  },
+
+  getTransportPrices: async (payload: { origin: string; destination: string; date: string; modes: string[] }): Promise<TransportPricesResponse> => {
+    const response = await api.post<TransportPricesResponse>('/api/transport', payload);
+    return response.data;
+  },
+
+  getFoodEstimate: async (payload: { city: string; country?: string; days: number; budget_level: string }): Promise<FoodEstimate> => {
+    const response = await api.post<FoodEstimate>('/api/food', payload);
+    return response.data;
+  },
+
+  getBudgetEstimate: async (payload: { destination: string; origin: string; start_date: string; end_date: string; travelers: number; budget_level: string }): Promise<BudgetBreakdown> => {
+    const response = await api.post<BudgetBreakdown>('/api/budget', payload);
+    return response.data;
+  },
+
+  exportCalendar: async (payload: { destination: string; start_date: string; end_date: string; events: Array<{ day: number; title: string; time: string; description?: string }> }): Promise<{ download_url: string; event_count: number }> => {
+    const response = await api.post<{ download_url: string; event_count: number }>('/calendar/export', payload);
     return response.data;
   },
 };

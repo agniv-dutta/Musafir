@@ -4,6 +4,9 @@ import { Navbar } from '../components/layout/Navbar';
 import { Footer } from '../components/layout/Footer';
 import { TripForm } from '../components/planner/TripForm';
 import { ResultPanel } from '../components/planner/ResultPanel';
+import { TripCalendar } from '../components/planner/TripCalendar';
+import { TransportPriceCard } from '../components/planner/TransportPriceCard';
+import { BudgetSummary } from '../components/planner/BudgetSummary';
 import { TripFormData } from '../types';
 import { useTripPlanner } from '../hooks/useTripPlanner';
 import { motion } from 'framer-motion';
@@ -19,6 +22,8 @@ export const PlannerPage: React.FC = () => {
     if (destination) {
       setInitialData({
         destination,
+         origin: '',
+         startDate: new Date().toISOString().slice(0, 10),
         duration: 5,
         budgetAmount: 150000,
         budgetCurrency: 'INR',
@@ -85,7 +90,25 @@ export const PlannerPage: React.FC = () => {
               />
             </div>
 
-            <div>
+            <div className="space-y-6">
+              {result && (
+                <TripCalendar
+                  destination={result.destination}
+                  duration={result.duration}
+                   startDate={result.startDate}
+                  finalAnswer={result.finalAnswer}
+                />
+              )}
+
+              {result && (
+                <TransportPriceCard
+                  origin={result.origin}
+                  destination={result.destination}
+                   date={result.startDate}
+                  budgetCurrency={result.budgetCurrency}
+                />
+              )}
+
               <ResultPanel
                 result={result}
                 isLoading={isLoading}
@@ -95,6 +118,17 @@ export const PlannerPage: React.FC = () => {
           </div>
         </div>
       </main>
+
+      {result && (
+        <BudgetSummary
+          destination={result.destination}
+          origin={result.origin}
+          duration={result.duration}
+          budgetLevel={result.budgetLevel}
+           startDate={result.startDate}
+          budgetCurrency={result.budgetCurrency}
+        />
+      )}
 
       <Footer />
     </div>

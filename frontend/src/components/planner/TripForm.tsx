@@ -28,6 +28,8 @@ const currencies = ['INR', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'THB', 'SGD'];
 export const TripForm: React.FC<TripFormProps> = ({ onSubmit, isLoading, initialData }) => {
   const [formData, setFormData] = useState<TripFormData>({
     destination: initialData?.destination || '',
+    origin: initialData?.origin || '',
+    startDate: initialData?.startDate || new Date().toISOString().slice(0, 10),
     duration: initialData?.duration || 7,
     budgetAmount: initialData?.budgetAmount || 150000,
     budgetCurrency: initialData?.budgetCurrency || 'INR',
@@ -84,6 +86,20 @@ export const TripForm: React.FC<TripFormProps> = ({ onSubmit, isLoading, initial
           </div>
         </div>
 
+        {/* Origin Input */}
+        <div>
+          <label className="block text-sm font-medium text-zinc-300 mb-2">
+            Origin City
+          </label>
+          <input
+            type="text"
+            placeholder="Where are you starting from?"
+            value={formData.origin}
+            onChange={e => setFormData(prev => ({ ...prev, origin: e.target.value }))}
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-zinc-50 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500 transition-all duration-300"
+          />
+        </div>
+
         {/* Duration Slider */}
         <div>
           <div className="flex justify-between items-center mb-2">
@@ -106,6 +122,19 @@ export const TripForm: React.FC<TripFormProps> = ({ onSubmit, isLoading, initial
             <span>14 days</span>
             <span>30 days</span>
           </div>
+        </div>
+
+        {/* Start Date */}
+        <div>
+          <label className="block text-sm font-medium text-zinc-300 mb-2">
+            Start Date
+          </label>
+          <input
+            type="date"
+            value={formData.startDate}
+            onChange={e => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-zinc-50 focus:outline-none focus:ring-2 focus:ring-violet-500 transition-all duration-300"
+          />
         </div>
 
         {/* Budget Section */}

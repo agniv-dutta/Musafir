@@ -2,15 +2,27 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict
 import json
 from datetime import datetime, timedelta
 import random
 import sys
 import os
+from dotenv import load_dotenv
 
 # Add the parent directory to the path to import agent_core
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT_DIR)
+
+# Load environment variables from repo root .env, fallback to backend/env
+root_env = os.path.join(ROOT_DIR, ".env")
+backend_env = os.path.join(os.path.dirname(os.path.abspath(__file__)), "env")
+if os.path.exists(root_env):
+    load_dotenv(root_env)
+elif os.path.exists(backend_env):
+    load_dotenv(backend_env)
+else:
+    load_dotenv()
 
 app = FastAPI(title="Wandr API", version="1.0.0")
 
@@ -27,12 +39,45 @@ app.add_middleware(
 
 class TripRequest(BaseModel):
     destination: str
+    origin: Optional[str] = None
     duration: int
     budgetAmount: float
     budgetCurrency: str
     budgetLevel: str
     travelStyle: str
     constraints: Optional[str] = None
+
+class CalendarEvent(BaseModel):
+    day: int
+    title: str
+    time: str
+    description: Optional[str] = ""
+
+class CalendarExportRequest(BaseModel):
+    destination: str
+    start_date: str
+    end_date: str
+    events: List[CalendarEvent] = []
+
+class TransportRequest(BaseModel):
+    origin: str
+    destination: str
+    date: str
+    modes: List[str]
+
+class FoodRequest(BaseModel):
+    city: str
+    country: Optional[str] = ""
+    days: int
+    budget_level: str
+
+class BudgetRequest(BaseModel):
+    destination: str
+    origin: str
+    start_date: str
+    end_date: str
+    travelers: int
+    budget_level: str
 
 class WeatherDay(BaseModel):
     date: str
@@ -137,27 +182,43 @@ async def plan_trip(request: TripRequest):
     try:
         # Try to use the actual agent if available
         try:
-            from agent_core import agent_executor
+            from backend.agent_core import agent_executor
             query = f"""
             Plan a {request.duration}-day trip to {request.destination}.
             My budget is {request.budgetAmount} {request.budgetCurrency} ({request.budgetLevel} level).
             Travel style: {request.travelStyle}.
             Special requirements: {request.constraints or 'none'}.
+            Origin city: {request.origin or 'not provided'}.
             Convert my budget to local currency, check the weather, and create a detailed itinerary.
             """
             
-            result = agent_executor.invoke({"input": query})
-            
+            result = agent_executor.invoke({"messages": [("user", query)]})
+
+            final_answer = result.get("output", "")
+            messages = result.get("messages", [])
+            if not final_answer and messages:
+                last_message = messages[-1]
+                final_answer = getattr(last_message, "content", str(last_message))
+
+            intermediate_steps = [
+                IntermediateStep(
+                    tool=step[0].tool,
+                    input=str(step[0].tool_input),
+                    output=str(step[1])
+                )
+                for step in result.get("intermediate_steps", [])
+            ]
+
+            itinerary_step = next(
+                (step for step in intermediate_steps if "generate_itinerary" in step.tool),
+                None
+            )
+            if itinerary_step and itinerary_step.output:
+                final_answer = itinerary_step.output
+
             return TripResponse(
-                final_answer=result.get("output", ""),
-                intermediate_steps=[
-                    IntermediateStep(
-                        tool=step[0].tool,
-                        input=str(step[0].tool_input),
-                        output=str(step[1])
-                    )
-                    for step in result.get("intermediate_steps", [])
-                ]
+                final_answer=final_answer,
+                intermediate_steps=intermediate_steps
             )
         except ImportError:
             # Fallback to sample data if agent_core is not available
@@ -200,6 +261,7 @@ async def plan_trip(request: TripRequest):
             )
     
     except Exception as e:
+        print(f"/api/plan error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/weather")
@@ -208,9 +270,37 @@ async def get_weather(destination: str):
     try:
         # Try to use the actual weather tool if available
         try:
-            from tools.weather_tool import get_weather_data
-            data = get_weather_data(destination)
-            return data
+            from backend.tools.weather_tool import get_weather_forecast
+            data = get_weather_forecast.run(destination)
+            forecast = []
+            for line in data.split("\n"):
+                if ":" not in line:
+                    continue
+                date_part, rest = line.split(":", 1)
+                if "Max" not in rest or "Min" not in rest:
+                    continue
+                try:
+                    condition_part, details = rest.split(",", 1)
+                    max_part = details.split("Max")[1].split("/ Min")[0].strip().replace("°C", "")
+                    min_part = details.split("/ Min")[1].split(",")[0].strip().replace("°C", "")
+                    rain_part = details.split("Rain")[1].split("mm")[0].strip()
+                    wind_part = details.split("Wind")[1].split("km/h")[0].strip()
+                    forecast.append({
+                        "date": date_part.strip(),
+                        "condition": condition_part.strip().strip(","),
+                        "maxTemp": float(max_part),
+                        "minTemp": float(min_part),
+                        "precipitation": float(rain_part),
+                        "windSpeed": float(wind_part),
+                        "weatherCode": 0,
+                    })
+                except Exception:
+                    continue
+
+            return {
+                "forecast": forecast,
+                "recommendation": "Check daily updates for packing advice.",
+            }
         except ImportError:
             # Fallback to sample weather data
             base_date = datetime.now()
@@ -243,8 +333,8 @@ async def convert_currency(from_currency: str = Query("INR", alias="from"), to_c
         
         # Try to use the actual currency tool if available
         try:
-            from tools.currency_tool import convert_amount
-            data = convert_amount(from_currency, to_currency, conv_amount)
+            from backend.tools.currency_tool import convert_amount
+            data = convert_amount(from_currency, to_currency, amount)
             return data
         except ImportError:
             # Fallback to sample currency data
@@ -275,9 +365,44 @@ async def get_destination(name: str):
     try:
         # Try to use the actual destination tool if available
         try:
-            from tools.destination_tool import get_destination_info
-            data = get_destination_info(name)
-            return data
+            from backend.tools.destination_tool import get_destination_info
+            raw = get_destination_info.run(name)
+            parsed = {
+                "country": name,
+                "capital": name,
+                "population": "Unknown",
+                "timezone": "UTC",
+                "currency": "local",
+                "languages": ["English"],
+                "coordinates": {"latitude": 0, "longitude": 0},
+                "tips": [],
+            }
+
+            for line in raw.split("\n"):
+                if line.startswith("Country:"):
+                    parsed["country"] = line.replace("Country:", "").strip()
+                if line.startswith("Capital:"):
+                    parsed["capital"] = line.replace("Capital:", "").strip()
+                if line.startswith("Population:"):
+                    parsed["population"] = line.replace("Population:", "").strip()
+                if line.startswith("Timezones:"):
+                    parsed["timezone"] = line.replace("Timezones:", "").strip()
+                if line.startswith("Currency:"):
+                    parsed["currency"] = line.replace("Currency:", "").strip()
+                if line.startswith("Languages:"):
+                    langs = line.replace("Languages:", "").strip()
+                    parsed["languages"] = [item.strip() for item in langs.split(",") if item.strip()]
+                if line.startswith("Coordinates:"):
+                    coords = line.replace("Coordinates:", "").strip()
+                    if "Lat" in coords and "Lon" in coords:
+                        lat_part = coords.split("Lat")[1].split(",")[0].strip()
+                        lon_part = coords.split("Lon")[1].strip()
+                        parsed["coordinates"] = {
+                            "latitude": float(lat_part),
+                            "longitude": float(lon_part),
+                        }
+
+            return parsed
         except ImportError:
             # Fallback to sample destination data
             destinations = {
@@ -351,6 +476,96 @@ async def get_destination(name: str):
             
             return dest_data
     
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/transport")
+async def get_transport(request: TransportRequest):
+    try:
+        from backend.tools.transport_tool import get_transport_prices
+        data = get_transport_prices.run(
+            {
+                "origin": request.origin,
+                "destination": request.destination,
+                "date": request.date,
+                "modes": request.modes,
+            }
+        )
+        return json.loads(data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/food")
+async def get_food_budget(request: FoodRequest):
+    try:
+        from backend.tools.food_price_tool import estimate_food_prices
+        data = estimate_food_prices.run(
+            {
+                "city": request.city,
+                "country": request.country or "",
+                "days": request.days,
+                "budget_level": request.budget_level,
+            }
+        )
+        return json.loads(data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/budget")
+async def get_budget(request: BudgetRequest):
+    try:
+        from backend.tools.budget_tool import calculate_trip_budget
+        data = calculate_trip_budget.run(
+            {
+                "destination": request.destination,
+                "origin": request.origin,
+                "start_date": request.start_date,
+                "end_date": request.end_date,
+                "travelers": request.travelers,
+                "budget_level": request.budget_level,
+            }
+        )
+        return json.loads(data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/calendar/export")
+async def export_calendar(request: CalendarExportRequest):
+    try:
+        from backend.tools.calendar_tool import generate_trip_ics
+        payload = {
+            "destination": request.destination,
+            "start_date": request.start_date,
+            "end_date": request.end_date,
+            "events": [event.dict() for event in request.events],
+        }
+        data = json.loads(generate_trip_ics.run(payload))
+        if "ics_path" not in data:
+            raise HTTPException(status_code=400, detail=data.get("error", "Failed to generate ICS"))
+        from urllib.parse import quote
+        download_path = quote(data["ics_path"], safe="")
+        return {"download_url": "/calendar/download?path=" + download_path, "event_count": data["event_count"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/calendar/download")
+async def download_calendar(path: str):
+    try:
+        from fastapi.responses import FileResponse
+        from urllib.parse import unquote
+        file_path = unquote(path)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="ICS file not found")
+        return FileResponse(
+            file_path,
+            media_type="text/calendar",
+            filename="trip.ics",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

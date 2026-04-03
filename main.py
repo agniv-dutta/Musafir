@@ -6,11 +6,11 @@ from dotenv import load_dotenv
 # Load .env before any module that needs API keys
 load_dotenv()
 
-from agent_core import build_agent
-from tools.destination_tool import get_destination_info
-from tools.weather_tool import get_weather_forecast
-from tools.currency_tool import convert_currency
-from tools.itinerary_tool import generate_itinerary
+from backend.agent_core import build_agent
+from backend.tools.destination_tool import get_destination_info
+from backend.tools.weather_tool import get_weather_forecast
+from backend.tools.currency_tool import convert_currency
+from backend.tools.itinerary_tool import generate_itinerary
 
 
 def setup_logging():

@@ -58,7 +58,7 @@ Best areas to stay:
 - [2-3 accommodation area recommendations with reasoning]
 """
         payload = {
-            "model": "llama3-8b-8192",
+            "model": os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
             "messages": [
                 {"role": "system", "content": "You are an expert travel planner with deep knowledge of global destinations."},
                 {"role": "user", "content": prompt}
@@ -69,6 +69,10 @@ Best areas to stay:
 
         response = requests.post(groq_url, headers=headers, json=payload)
         result = response.json()
+        if "choices" not in result or not result["choices"]:
+            error_msg = result.get("error", {}).get("message", "Unknown Groq response error")
+            return f"Error generating itinerary: {error_msg}"
+
         itinerary = result["choices"][0]["message"]["content"]
         return f"Generated Itinerary for {destination}:\n\n{itinerary}"
 
