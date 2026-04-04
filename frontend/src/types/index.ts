@@ -147,6 +147,9 @@ export interface FlightOffer {
   price: number;
   currency: string;
   route: string;
+  sourceTitle?: string;
+  sourceUrl?: string;
+  sourceSnippet?: string;
 }
 
 export interface GroundTransportOption {

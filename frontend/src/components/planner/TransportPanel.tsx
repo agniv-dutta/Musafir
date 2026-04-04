@@ -171,6 +171,31 @@ export const TransportPanel: React.FC<TransportPanelProps> = ({ origin, destinat
                   {stopLabel(offer.stops)}
                 </span>
               </div>
+
+              {(offer.sourceTitle || offer.sourceUrl) && (
+                <div className="mt-3 rounded-lg border border-zinc-700/70 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-400">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate">
+                      Web result: {offer.sourceTitle || 'Flight search source'}
+                    </span>
+                    {offer.sourceUrl && (
+                      <a
+                        href={offer.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 text-violet-300 hover:text-violet-200"
+                      >
+                        Open source
+                      </a>
+                    )}
+                  </div>
+                  {offer.sourceSnippet && (
+                    <p className="mt-1 line-clamp-2 text-zinc-500">
+                      {offer.sourceSnippet}
+                    </p>
+                  )}
+                </div>
+              )}
             </motion.div>
           );
         })}

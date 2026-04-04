@@ -1,6 +1,7 @@
 import json
 import math
 import re
+import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -91,6 +92,70 @@ INDIAN_ROUTE_DATA: Dict[str, Dict] = {
     },
 }
 
+# European & International Train Routes
+EUROPEAN_ROUTE_DATA: Dict[str, Dict] = {
+    "london-paris": {
+        "train": {"time": "3h 15m", "price_range": "GBP 25-120", "frequency": "Every 2 hours", "operator": "Eurostar"},
+        "bus": {"time": "8h", "price_range": "GBP 15-50", "frequency": "Multiple daily", "operator": "FlixBus"},
+    },
+    "berlin-prague": {
+        "train": {"time": "2h 30m", "price_range": "EUR 15-80", "frequency": "Multiple daily", "operator": "Czech Railways"},
+        "bus": {"time": "4h", "price_range": "EUR 10-30", "frequency": "Multiple daily", "operator": "FlixBus"},
+    },
+    "budapest-vienna": {
+        "train": {"time": "2h 45m", "price_range": "EUR 18-75", "frequency": "Multiple daily", "operator": "Austrian Railways"},
+        "bus": {"time": "3h 30m", "price_range": "EUR 12-35", "frequency": "Multiple daily", "operator": "FlixBus"},
+    },
+    "vienna-zagreb": {
+        "train": {"time": "6h", "price_range": "EUR 25-90", "frequency": "Daily", "operator": "Croatian Railways"},
+        "bus": {"time": "7h", "price_range": "EUR 20-50", "frequency": "Multiple daily", "operator": "FlixBus"},
+    },
+    "amsterdam-brussels": {
+        "train": {"time": "1h 50m", "price_range": "EUR 15-65", "frequency": "Hourly", "operator": "NS/SNCB"},
+        "bus": {"time": "2h 30m", "price_range": "EUR 10-25", "frequency": "Multiple daily", "operator": "FlixBus"},
+    },
+    "munich-vienna": {
+        "train": {"time": "2h 15m", "price_range": "EUR 20-90", "frequency": "Multiple daily", "operator": "ÖBB"},
+        "bus": {"time": "3h", "price_range": "EUR 15-40", "frequency": "Multiple daily", "operator": "FlixBus"},
+    },
+    "barcelona-madrid": {
+        "train": {"time": "2h 30m", "price_range": "EUR 25-150", "frequency": "Multiple daily", "operator": "Renfe"},
+        "bus": {"time": "7h", "price_range": "EUR 15-40", "frequency": "Multiple daily", "operator": "FlixBus"},
+    },
+    "florence-rome": {
+        "train": {"time": "2h 30m", "price_range": "EUR 20-80", "frequency": "Every 30 min", "operator": "Trenitalia"},
+        "bus": {"time": "4h", "price_range": "EUR 12-30", "frequency": "Multiple daily", "operator": "FlixBus"},
+    },
+    "edinburgh-london": {
+        "train": {"time": "7h", "price_range": "GBP 35-120", "frequency": "Multiple daily", "operator": "LNER"},
+        "bus": {"time": "10h", "price_range": "GBP 20-60", "frequency": "Multiple daily", "operator": "FlixBus"},
+    },
+    "geneva-zurich": {
+        "train": {"time": "3h", "price_range": "CHF 40-120", "frequency": "Hourly", "operator": "SBB"},
+        "bus": {"time": "4h", "price_range": "CHF 25-60", "frequency": "Multiple daily", "operator": "FlixBus"},
+    },
+}
+
+# Asian train routes
+ASIAN_ROUTE_DATA: Dict[str, Dict] = {
+    "bangkok-chiangmai": {
+        "train": {"time": "13h", "price_range": "THB 500-1500", "frequency": "Daily", "operator": "Thai Railways"},
+        "bus": {"time": "10h", "price_range": "THB 400-800", "frequency": "Multiple daily", "operator": "Local operators"},
+    },
+    "tokyo-kyoto": {
+        "train": {"time": "2h 15m", "price_range": "JPY 13500-14320", "frequency": "Multiple daily", "operator": "JR"},
+        "bus": {"time": "7h", "price_range": "JPY 2500-5000", "frequency": "Multiple daily", "operator": "Willer Express"},
+    },
+    "singapore-kuala-lumpur": {
+        "train": {"time": "7h", "price_range": "SGD 45-95", "frequency": "Daily", "operator": "KTM"},
+        "bus": {"time": "5h", "price_range": "SGD 20-35", "frequency": "Multiple daily", "operator": "Local operators"},
+    },
+    "hong-kong-guangzhou": {
+        "train": {"time": "1h", "price_range": "HKD 75-220", "frequency": "Multiple daily", "operator": "MTR"},
+        "bus": {"time": "2h 30m", "price_range": "HKD 50-120", "frequency": "Multiple daily", "operator": "Local operators"},
+    },
+}
+
 INDIAN_CITY_COORDS = {
     "mumbai": (19.0760, 72.8777),
     "pune": (18.5204, 73.8567),
@@ -109,12 +174,168 @@ INDIAN_CITY_COORDS = {
     "kochi": (9.9312, 76.2673),
 }
 
+# European city coordinates
+EUROPEAN_CITY_COORDS = {
+    "paris": (48.8566, 2.3522),
+    "london": (51.5074, -0.1278),
+    "berlin": (52.5200, 13.4050),
+    "prague": (50.0755, 14.4378),
+    "vienna": (48.2082, 16.3738),
+    "budapest": (47.4979, 19.0402),
+    "zagreb": (45.8150, 15.9819),
+    "amsterdam": (52.3676, 4.9041),
+    "brussels": (50.8503, 4.3517),
+    "munich": (48.1351, 11.5820),
+    "barcelona": (41.3851, 2.1734),
+    "madrid": (40.4168, -3.7038),
+    "rome": (41.9028, 12.4964),
+    "florence": (43.7695, 11.2558),
+    "edinburgh": (55.9533, -3.1883),
+    "geneva": (46.2044, 6.1431),
+    "zurich": (47.3769, 8.5469),
+    "istanbul": (41.0082, 28.9784),
+    "athens": (37.9838, 23.7275),
+}
+
+# Asian city coordinates
+ASIAN_CITY_COORDS = {
+    "bangkok": (13.7563, 100.5018),
+    "chiangmai": (18.7883, 98.9853),
+    "tokyo": (35.6762, 139.6503),
+    "kyoto": (35.0116, 135.7681),
+    "singapore": (1.3521, 103.8198),
+    "kuala-lumpur": (3.1390, 101.6869),
+    "hong-kong": (22.3193, 114.1694),
+    "guangzhou": (23.1291, 113.2644),
+    "shanghai": (31.2304, 121.4737),
+    "beijing": (39.9042, 116.4074),
+}
+
 
 
 def _route_key(from_city: str, to_city: str) -> str:
-    a = from_city.strip().lower()
-    b = to_city.strip().lower()
+    """Generate route key - cities are normalized and sorted alphabetically."""
+    a = _normalize_city_name(from_city)
+    b = _normalize_city_name(to_city)
     return "-".join(sorted([a, b]))
+
+
+def _detect_route_region(from_city: str, to_city: str) -> Tuple[str, bool]:
+    """
+    Detect which region a route belongs to and return (region, has_good_trains).
+    Regions: 'indian', 'european', 'asian', 'global'
+    """
+    from_lower = from_city.lower().replace(" ", "-").replace(",", "")
+    to_lower = to_city.lower().replace(" ", "-").replace(",", "")
+    
+    # Check Indian
+    if from_lower in INDIAN_CITY_COORDS and to_lower in INDIAN_CITY_COORDS:
+        return "indian", True
+    
+    # Check European
+    eu_cities = set(EUROPEAN_CITY_COORDS.keys())
+    if from_lower in eu_cities and to_lower in eu_cities:
+        return "european", True
+    
+    # Check Asian
+    asian_cities = set(ASIAN_CITY_COORDS.keys())
+    if from_lower in asian_cities and to_lower in asian_cities:
+        return "asian", True
+    
+    # Check if either is in good-train regions
+    good_train_regions = eu_cities | asian_cities | set(INDIAN_CITY_COORDS.keys())
+    if from_lower in good_train_regions or to_lower in good_train_regions:
+        return "global", True
+    
+    return "global", False
+
+
+def _normalize_city_name(city: str) -> str:
+    """Normalize city name for lookup."""
+    return city.lower().strip().replace(" ", "-").replace(",", "")
+
+
+def _get_distance_km(from_city: str, to_city: str, region: str) -> float:
+    """Calculate distance between cities."""
+    coords_map = {}
+    if region == "indian":
+        coords_map = INDIAN_CITY_COORDS
+    elif region == "european":
+        coords_map = EUROPEAN_CITY_COORDS
+    elif region == "asian":
+        coords_map = ASIAN_CITY_COORDS
+    else:
+        # Combined for global
+        coords_map = {**INDIAN_CITY_COORDS, **EUROPEAN_CITY_COORDS, **ASIAN_CITY_COORDS}
+    
+    from_normalized = _normalize_city_name(from_city)
+    to_normalized = _normalize_city_name(to_city)
+    
+    a = coords_map.get(from_normalized)
+    b = coords_map.get(to_normalized)
+    
+    if not a or not b:
+        return 500.0  # fallback distance
+    
+    return _haversine_km(a[0], a[1], b[0], b[1])
+
+
+def _generate_train_bus_options(from_city: str, to_city: str, distance_km: float, region: str) -> Dict[str, Dict]:
+    """Generate realistic train and bus options for a route based on distance."""
+    
+    # Distance-based pricing and time estimation
+    if distance_km < 200:  # Short distance
+        train_hours = max(distance_km / 100, 1.5)
+        train_low = int(distance_km * 0.3)
+        train_high = int(distance_km * 0.8)
+        bus_hours = max(distance_km / 80, 1.5)
+        bus_low = int(distance_km * 0.25)
+        bus_high = int(distance_km * 0.7)
+        
+    elif distance_km < 500:  # Medium distance
+        train_hours = max(distance_km / 120, 3.0)
+        train_low = int(distance_km * 0.2)
+        train_high = int(distance_km * 0.6)
+        bus_hours = max(distance_km / 80, 4.0)
+        bus_low = int(distance_km * 0.15)
+        bus_high = int(distance_km * 0.5)
+        
+    else:  # Long distance
+        train_hours = max(distance_km / 80, 8.0)
+        train_low = int(distance_km * 0.1)
+        train_high = int(distance_km * 0.4)
+        bus_hours = max(distance_km / 60, 10.0)
+        bus_low = int(distance_km * 0.08)
+        bus_high = int(distance_km * 0.35)
+    
+    # Adjust for region
+    if region == "european":
+        train_low = int(train_low * 0.6)  # European trains cheaper per km
+        train_high = int(train_high * 0.7)
+        currency = "EUR"
+    elif region == "asian":
+        train_low = int(train_low * 0.8)  # Asian trains moderate pricing
+        train_high = int(train_high * 1.0)
+        currency = "Local"
+    else:  # Indian or unknown
+        currency = "INR"
+    
+    return {
+        "train": {
+            "time": f"{train_hours:.1f}h",
+            "price_range": f"{train_low:,}-{train_high:,}",
+            "frequency": "Multiple daily" if distance_km < 500 else "Daily",
+            "source": "estimated",
+            "operator": "Regional operator",
+        },
+        "bus": {
+            "time": f"{bus_hours:.1f}h",
+            "price_range": f"{bus_low:,}-{bus_high:,}",
+            "frequency": "Multiple daily",
+            "source": "estimated",
+            "operator": "Regional/Budget operators",
+        },
+    }
 
 
 def _parse_price_range_to_min(price_range: str) -> Optional[float]:
@@ -150,55 +371,6 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return radius * c
 
 
-def _estimate_indian_route(from_city: str, to_city: str) -> Dict[str, Dict[str, str]]:
-    a = INDIAN_CITY_COORDS.get(from_city.lower())
-    b = INDIAN_CITY_COORDS.get(to_city.lower())
-
-    distance_km = 900.0
-    if a and b:
-        distance_km = max(_haversine_km(a[0], a[1], b[0], b[1]), 120.0)
-
-    train_hours = max(distance_km / 55, 2.0)
-    bus_hours = max(distance_km / 45, 2.5)
-    flight_hours = max(distance_km / 700 + 0.8, 1.0)
-
-    train_low = int(distance_km * 0.7)
-    train_high = int(distance_km * 1.8)
-    bus_low = int(distance_km * 0.8)
-    bus_high = int(distance_km * 1.7)
-    flight_low = int(distance_km * 5.5)
-    flight_high = int(distance_km * 12.5)
-
-    return {
-        "train": {
-            "time": f"{train_hours:.1f}h",
-            "price_range": f"INR {train_low:,}-{train_high:,}",
-            "frequency": "Estimated: multiple services/day",
-            "source": "estimated",
-        },
-        "bus": {
-            "time": f"{bus_hours:.1f}h",
-            "price_range": f"INR {bus_low:,}-{bus_high:,}",
-            "frequency": "Estimated: frequent services",
-            "source": "estimated",
-        },
-        "flight": {
-            "time": f"{flight_hours:.1f}h",
-            "price_range": f"INR {flight_low:,}-{flight_high:,}",
-            "frequency": "Estimated",
-            "source": "estimated",
-        },
-    }
-
-
-def _is_indian_city(city: str) -> bool:
-    return city.strip().lower() in INDIAN_CITY_COORDS
-
-
-def _is_indian_domestic_route(from_city: str, to_city: str) -> bool:
-    return _is_indian_city(from_city) and _is_indian_city(to_city)
-
-
 def _default_date() -> str:
     return (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%d")
 
@@ -212,6 +384,7 @@ def _build_ground_mode(mode_name: str, raw: Dict) -> Dict:
         "journeyTime": raw.get("time", "N/A"),
         "priceRange": raw.get("price_range", "N/A"),
         "frequency": raw.get("frequency", "N/A"),
+        "operator": raw.get("operator", "Operator"),
         "source": raw.get("source", "live"),
         "minPrice": min_price,
         "durationHours": duration_hours,
@@ -232,30 +405,59 @@ def get_transport_options_data(from_city: str, to_city: str, date: Optional[str]
 
     flight_offers = flights_data.get("offers", []) if flights_data.get("success") else []
 
-    indian_route = _is_indian_domestic_route(from_city, to_city)
-    route_key = _route_key(from_city, to_city)
-
-    if indian_route:
-        route_raw = INDIAN_ROUTE_DATA.get(route_key) or _estimate_indian_route(from_city, to_city)
-        trains = {
-            "applicable": True,
-            "options": [_build_ground_mode("train", route_raw["train"])],
-        }
-        buses = {
-            "applicable": True,
-            "options": [_build_ground_mode("bus", route_raw["bus"])],
-        }
+    # Detect route region and check if it has good train infrastructure
+    region, has_good_trains = _detect_route_region(from_city, to_city)
+    
+    # Initialize train/bus as not applicable
+    trains = {
+        "applicable": False,
+        "options": [],
+        "message": "Train travel not available for this route.",
+    }
+    buses = {
+        "applicable": False,
+        "options": [],
+        "message": "Bus travel not available for this route.",
+    }
+    
+    if not has_good_trains:
+        # No good train infrastructure - just return flights
+        pass
     else:
-        trains = {
-            "applicable": False,
-            "options": [],
-            "message": "Train travel not applicable for international routes.",
-        }
-        buses = {
-            "applicable": False,
-            "options": [],
-            "message": "Bus travel not applicable for international routes.",
-        }
+        # Try to find specific route data
+        route_key = _route_key(from_city, to_city)
+        route_data = None
+        
+        if region == "indian":
+            route_data = INDIAN_ROUTE_DATA.get(route_key)
+        elif region == "european":
+            route_data = EUROPEAN_ROUTE_DATA.get(route_key)
+        elif region == "asian":
+            route_data = ASIAN_ROUTE_DATA.get(route_key)
+        
+        # If specific route found, use it
+        if route_data:
+            trains = {
+                "applicable": True,
+                "options": [_build_ground_mode("train", route_data.get("train", {}))],
+            }
+            buses = {
+                "applicable": True,
+                "options": [_build_ground_mode("bus", route_data.get("bus", {}))],
+            }
+        else:
+            # Generate synthetic train/bus options based on distance
+            distance_km = _get_distance_km(from_city, to_city, region)
+            synthetic_modes = _generate_train_bus_options(from_city, to_city, distance_km, region)
+            
+            trains = {
+                "applicable": True,
+                "options": [_build_ground_mode("train", synthetic_modes.get("train", {}))],
+            }
+            buses = {
+                "applicable": True,
+                "options": [_build_ground_mode("bus", synthetic_modes.get("bus", {}))],
+            }
 
     modes_for_value: List[Tuple[str, float]] = []
 
@@ -288,7 +490,7 @@ def get_transport_options_data(from_city: str, to_city: str, date: Optional[str]
 
     return {
         "flights": flight_offers[:3],
-        "flightSource": "travelpayouts_live" if flight_offers else (flights_data.get("error_type") or "unavailable"),
+        "flightSource": "web_search_with_synthetic_diversity" if flight_offers else (flights_data.get("error_type") or "unavailable"),
         "flightMessage": flights_data.get("message", "") if not flight_offers else "",
         "routeResolved": {
             "originCity": flights_data.get("origin_city", from_city),
@@ -300,6 +502,7 @@ def get_transport_options_data(from_city: str, to_city: str, date: Optional[str]
         "buses": buses,
         "bestValue": best_value,
         "bestValueReason": best_value_reason,
+        "region": region,  # Include for frontend reference
     }
 
 
@@ -307,7 +510,8 @@ def get_transport_options_data(from_city: str, to_city: str, date: Optional[str]
 def get_transport_options(query: str) -> str:
     """
     Returns transport mode options (flight/train/bus) between cities with estimated prices and travel times.
-    Use for domestic Indian routes or when user asks about non-flight transport.
+    Works for domestic Indian routes, European routes, Asian routes, and any major transportation corridors.
+    Use when user asks about transport, travel modes, or alternative transportation.
     Input: "FROM_CITY TO_CITY"
     """
     cleaned = " ".join((query or "").strip().split())
@@ -330,40 +534,49 @@ def get_transport_options(query: str) -> str:
 
     lines = [
         f"Transport options from {from_city} to {to_city}:",
-        "-" * 55,
+        f"Region: {data.get('region', 'Global')} | Distance-based pricing",
+        "-" * 70,
     ]
 
+    # Flights
     if data.get("flights"):
         cheapest = min(data["flights"], key=lambda item: item.get("price", float("inf")))
         stop_text = "Direct" if cheapest.get("stops", 0) == 0 else f"{cheapest.get('stops', 0)} stop(s)"
         lines.append(
-            f"Flight (Live data): {cheapest.get('airline', 'Airline')} | {cheapest.get('duration', 'N/A')} | "
-            f"{stop_text} | {cheapest.get('currency', 'INR')} {cheapest.get('price', 0):,.0f}"
+            f"✈️  FLIGHT: {cheapest.get('airline', 'Airline'):20s} | {cheapest.get('duration', 'N/A'):10s} | "
+            f"{stop_text:15s} | {cheapest.get('currency', 'INR')} {cheapest.get('price', 0):,.0f}"
         )
     else:
         message = data.get("flightMessage") or "Live flight pricing unavailable."
-        lines.append(f"Flight: {message}")
+        lines.append(f"✈️  FLIGHT: {message}")
 
+    # Trains
     if data.get("trains", {}).get("applicable"):
         train = data["trains"]["options"][0]
-        source = "Live data" if train.get("source") == "live" else "Estimated range"
+        source = "Live data" if train.get("source") == "live" else "Estimated"
+        operator = train.get("source") == "live" and train.get("operator", "Operator") or "Regional Railways"
         lines.append(
-            f"Train ({source}): {train.get('journeyTime')} | {train.get('priceRange')} | {train.get('frequency')}"
+            f"🚂 TRAIN:  {operator:20s} | {train.get('journeyTime'):10s} | "
+            f"{train.get('frequency'):15s} | {train.get('priceRange')}"
         )
     else:
-        lines.append("Train: Not applicable for international travel.")
+        lines.append(f"🚂 TRAIN:  Not available for this route.")
 
+    # Buses
     if data.get("buses", {}).get("applicable"):
         bus = data["buses"]["options"][0]
-        source = "Live data" if bus.get("source") == "live" else "Estimated range"
+        source = "Live data" if bus.get("source") == "live" else "Estimated"
+        operator = bus.get("source") == "live" and bus.get("operator", "Operator") or "Regional/Budget Operators"
         lines.append(
-            f"Bus ({source}): {bus.get('journeyTime')} | {bus.get('priceRange')} | {bus.get('frequency')}"
+            f"🚌 BUS:    {operator:20s} | {bus.get('journeyTime'):10s} | "
+            f"{bus.get('frequency'):15s} | {bus.get('priceRange')}"
         )
     else:
-        lines.append("Bus: Not applicable for international travel.")
+        lines.append(f"🚌 BUS:    Not available for this route.")
 
     if data.get("bestValue"):
-        lines.append(f"Best value: {data['bestValue']} ({data.get('bestValueReason', 'Cheapest per travel hour')})")
+        lines.append("-" * 70)
+        lines.append(f"💡 Best value: {data['bestValue'].upper()} ({data.get('bestValueReason', 'Cheapest per travel hour')})")
 
     return "\n".join(lines)
 
