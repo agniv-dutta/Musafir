@@ -3,8 +3,10 @@ import math
 import re
 import random
 import xml.etree.ElementTree as ET
+from html import unescape
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import quote_plus, urlparse
 
 from langchain.tools import tool
 import requests
@@ -284,6 +286,43 @@ def _bing_rss_search(query: str) -> List[Dict[str, str]]:
     return items
 
 
+def _duckduckgo_html_search(query: str) -> List[Dict[str, str]]:
+    try:
+        response = requests.get(
+            "https://duckduckgo.com/html/",
+            params={"q": query},
+            timeout=8,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        response.raise_for_status()
+        html = response.text
+    except Exception:
+        return []
+
+    items: List[Dict[str, str]] = []
+    anchor_pattern = re.compile(
+        r'<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>',
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    snippet_pattern = re.compile(
+        r'<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(?P<snippet>.*?)</a>',
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    snippets = [re.sub(r"<[^>]+>", "", s).strip() for s in snippet_pattern.findall(html)]
+    for idx, match in enumerate(anchor_pattern.finditer(html)):
+        href = unescape(match.group("href") or "").strip()
+        title_html = match.group("title") or ""
+        title = re.sub(r"<[^>]+>", "", title_html).strip()
+        snippet = snippets[idx] if idx < len(snippets) else ""
+        if title or snippet:
+            items.append({"title": title, "link": href, "description": snippet})
+        if len(items) >= 25:
+            break
+
+    return items
+
+
 def _extract_city_parts(city: str) -> Tuple[str, str]:
     cleaned = re.sub(r"\s+", " ", (city or "").strip())
     if not cleaned:
@@ -542,6 +581,229 @@ def _search_ground_source(from_city: str, to_city: str, mode: str, travel_date: 
     }
 
 
+def _extract_duration_text(text: str) -> str:
+    if not text:
+        return "N/A"
+
+    normalized = re.sub(r"\s+", " ", text)
+
+    # Examples: 6h 30m, 6 h 30 m, 6 hours 30 min
+    hm = re.search(r"(\d{1,2})\s*(?:h|hr|hrs|hour|hours)\s*(\d{1,2})?\s*(?:m|min|mins|minute|minutes)?", normalized, flags=re.IGNORECASE)
+    if hm:
+        hours = int(hm.group(1))
+        mins = int(hm.group(2) or 0)
+        return f"{hours}h {mins:02d}m" if mins else f"{hours}h"
+
+    # Example: 06:45
+    colon = re.search(r"\b(\d{1,2}):(\d{2})\b", normalized)
+    if colon:
+        hours = int(colon.group(1))
+        mins = int(colon.group(2))
+        if 0 <= hours <= 24 and 0 <= mins < 60:
+            return f"{hours}h {mins:02d}m"
+
+    return "N/A"
+
+
+def _extract_price_range_text(text: str) -> str:
+    if not text:
+        return "N/A"
+
+    symbol_to_code = {
+        "$": "USD",
+        "€": "EUR",
+        "£": "GBP",
+        "₹": "INR",
+        "¥": "JPY",
+    }
+    currency_regex = r"USD|EUR|GBP|INR|JPY|CNY|RMB|SGD|HKD|AUD|CAD|THB|MYR|AED|CHF"
+    price_pattern = re.compile(
+        rf"(?:(?P<code>{currency_regex})\s*)?(?P<sym>[$€£₹¥])?\s*(?P<num>\d{{1,3}}(?:,\d{{3}})*(?:\.\d+)?)",
+        flags=re.IGNORECASE,
+    )
+
+    values: List[int] = []
+    currency = ""
+    for match in price_pattern.finditer(text):
+        raw = match.group("num")
+        if not raw:
+            continue
+        amount = float(raw.replace(",", ""))
+        if amount <= 0 or amount > 500000:
+            continue
+        code = (match.group("code") or "").upper()
+        sym = match.group("sym")
+        has_currency_marker = bool(code or sym)
+        # Ignore tiny uncoded numbers (e.g., years in snippets) unless currency is explicit.
+        if not has_currency_marker and amount < 20:
+            continue
+
+        values.append(int(round(amount)))
+
+        if not currency:
+            if code:
+                currency = code
+            elif sym:
+                currency = symbol_to_code.get(sym, "")
+
+    if not values:
+        return "N/A"
+
+    values = sorted(values)
+    if len(values) == 1:
+        low = max(int(values[0] * 0.85), 1)
+        high = int(values[0] * 1.15)
+    else:
+        low = values[0]
+        high = values[1]
+
+    prefix = f"{currency} " if currency else ""
+    return f"{prefix}{low:,}-{high:,}".strip()
+
+
+def _operator_from_link_or_title(link: str, title: str, mode: str, region: str) -> str:
+    parsed = urlparse(link or "")
+    host = (parsed.netloc or "").lower()
+    host = host.replace("www.", "")
+    if host:
+        base = host.split(".")[0].replace("-", " ").strip()
+        if base and len(base) > 2:
+            return base.title()
+
+    operators = GENERIC_REGION_OPERATORS.get(region, GENERIC_REGION_OPERATORS["global"]).get(mode, [])
+    return operators[0] if operators else ("Rail Operator" if mode == "train" else "Bus Operator")
+
+
+def _build_ground_options_from_web(
+    mode_name: str,
+    from_city: str,
+    to_city: str,
+    travel_date: str,
+    region: str,
+    max_results: int = 3,
+) -> List[Dict]:
+    from_base, _ = _extract_city_parts(from_city)
+    to_base, _ = _extract_city_parts(to_city)
+    from_token = _normalize_city_name(from_base).replace("-", " ")
+    to_token = _normalize_city_name(to_base).replace("-", " ")
+
+    mode_keywords = {
+        "train": r"train|rail|railway|station|intercity",
+        "bus": r"bus|coach|intercity|terminal",
+    }
+
+    queries = [
+        f"{from_city} to {to_city} {mode_name} tickets price schedule",
+        f"{from_city} to {to_city} {mode_name} booking",
+        f"{from_city} {to_city} {mode_name} timetable fare {travel_date}",
+    ]
+
+    raw_candidates: List[Dict[str, str]] = []
+    seen = set()
+    for query in queries:
+        for item in _bing_rss_search(query):
+            link = item.get("link", "")
+            title = item.get("title", "")
+            key = (link or title).strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            raw_candidates.append(item)
+        for item in _duckduckgo_html_search(query):
+            link = item.get("link", "")
+            title = item.get("title", "")
+            key = (link or title).strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            raw_candidates.append(item)
+
+    options: List[Dict] = []
+    for item in raw_candidates:
+        title = item.get("title", "")
+        description = item.get("description", "")
+        link = item.get("link", "")
+        text = f"{title} {description}".lower()
+
+        if re.search(mode_keywords.get(mode_name, mode_name), text, re.IGNORECASE) is None:
+            continue
+
+        from_match = bool(from_token) and ((from_token in text) or (from_token in link.lower()))
+        to_match = bool(to_token) and ((to_token in text) or (to_token in link.lower()))
+        if not (from_match and to_match):
+            continue
+
+        combined_text = f"{title} {description}"
+        option = {
+            "time": _extract_duration_text(combined_text),
+            "price_range": _extract_price_range_text(combined_text),
+            "frequency": "Check latest schedule",
+            "operator": _operator_from_link_or_title(link, title, mode_name, region),
+            "source": "web_search",
+            "source_title": title or "Bing web search result",
+            "source_url": link,
+            "source_snippet": description[:180],
+        }
+        options.append(_build_ground_mode(mode_name, option))
+
+        if len(options) >= max_results:
+            break
+
+    if options:
+        return options
+
+    # Dynamic fallback: still return web-query-driven option so UI can provide actionable links.
+    if raw_candidates:
+        weak_match = None
+        for candidate in raw_candidates:
+            title = candidate.get("title", "")
+            description = candidate.get("description", "")
+            link = candidate.get("link", "")
+            text = f"{title} {description}".lower()
+            has_mode_signal = re.search(mode_keywords.get(mode_name, mode_name), text, re.IGNORECASE) is not None
+            has_from_signal = (from_token in text) or (from_token in link.lower())
+            has_to_signal = (to_token in text) or (to_token in link.lower())
+            has_route_signal = has_from_signal and has_to_signal
+            if has_mode_signal and has_route_signal:
+                weak_match = candidate
+                break
+
+        if weak_match is None:
+            query_url = f"https://www.google.com/search?q={quote_plus(queries[0])}"
+            fallback_option = {
+                "time": "N/A",
+                "price_range": "N/A",
+                "frequency": "Check latest schedule",
+                "operator": GENERIC_REGION_OPERATORS.get(region, GENERIC_REGION_OPERATORS["global"]).get(mode_name, [mode_name.title()])[0],
+                "source": "web_search",
+                "source_title": f"Live {mode_name} search: {from_city} to {to_city}",
+                "source_url": query_url,
+                "source_snippet": f"No strongly route-matched listing found. Open live search results for query: {queries[0]}",
+            }
+            return [_build_ground_mode(mode_name, fallback_option)]
+
+        top = weak_match
+        top_title = top.get("title", "")
+        top_link = top.get("link", "")
+        top_desc = top.get("description", "")
+        combined = f"{top_title} {top_desc}"
+        parsed_time = _extract_duration_text(combined)
+        parsed_price = _extract_price_range_text(combined)
+        fallback_option = {
+            "time": parsed_time,
+            "price_range": parsed_price,
+            "frequency": "Check latest schedule",
+            "operator": _operator_from_link_or_title(top_link, top_title, mode_name, region),
+            "source": "web_search",
+            "source_title": top_title or f"{mode_name.title()} web search result",
+            "source_url": top_link or f"https://www.google.com/search?q={quote_plus(queries[0])}",
+            "source_snippet": (top_desc or f"Live search query: {queries[0]}")[:180],
+        }
+        return [_build_ground_mode(mode_name, fallback_option)]
+
+    return []
+
+
 def _expand_ground_options(mode_name: str, base_raw: Dict, from_city: str, to_city: str, travel_date: str, region: str) -> List[Dict]:
     operators = GENERIC_REGION_OPERATORS.get(region, GENERIC_REGION_OPERATORS["global"])[mode_name]
     base_low = _parse_price_range_to_min(base_raw.get("price_range", "")) or 0.0
@@ -592,87 +854,34 @@ def get_transport_options_data(from_city: str, to_city: str, date: Optional[str]
 
     flight_offers = flights_data.get("offers", []) if flights_data.get("success") else []
 
-    # Detect route region and check if it has good train infrastructure
-    region, has_good_trains = _detect_route_region(from_city, to_city)
-    
-    # Initialize train/bus as not applicable
+    # Keep region detection for labels/operator fallback, but train/bus discovery is always dynamic web-first.
+    region, _ = _detect_route_region(from_city, to_city)
+
+    train_options = _build_ground_options_from_web(
+        "train",
+        from_city,
+        to_city,
+        travel_date,
+        region,
+    )
+    bus_options = _build_ground_options_from_web(
+        "bus",
+        from_city,
+        to_city,
+        travel_date,
+        region,
+    )
+
     trains = {
-        "applicable": False,
-        "options": [],
-        "message": "Train travel not available for this route.",
+        "applicable": bool(train_options),
+        "options": train_options,
+        "message": "No route-specific train web results found for this date/query." if not train_options else "",
     }
     buses = {
-        "applicable": False,
-        "options": [],
-        "message": "Bus travel not available for this route.",
+        "applicable": bool(bus_options),
+        "options": bus_options,
+        "message": "No route-specific bus web results found for this date/query." if not bus_options else "",
     }
-    
-    if not has_good_trains:
-        # No good train infrastructure - just return flights
-        pass
-    else:
-        # Try to find specific route data
-        route_key = _route_key(from_city, to_city)
-        route_data = None
-        
-        if region == "indian":
-            route_data = INDIAN_ROUTE_DATA.get(route_key)
-        elif region == "european":
-            route_data = EUROPEAN_ROUTE_DATA.get(route_key)
-        elif region == "asian":
-            route_data = ASIAN_ROUTE_DATA.get(route_key)
-        
-        # If specific route found, use it
-        if route_data:
-            trains = {
-                "applicable": True,
-                "options": _expand_ground_options(
-                    "train",
-                    route_data.get("train", {}),
-                    from_city,
-                    to_city,
-                    travel_date,
-                    region,
-                ),
-            }
-            buses = {
-                "applicable": True,
-                "options": _expand_ground_options(
-                    "bus",
-                    route_data.get("bus", {}),
-                    from_city,
-                    to_city,
-                    travel_date,
-                    region,
-                ),
-            }
-        else:
-            # Generate synthetic train/bus options based on distance
-            distance_km = _get_distance_km(from_city, to_city, region)
-            synthetic_modes = _generate_train_bus_options(from_city, to_city, distance_km, region)
-            
-            trains = {
-                "applicable": True,
-                "options": _expand_ground_options(
-                    "train",
-                    synthetic_modes.get("train", {}),
-                    from_city,
-                    to_city,
-                    travel_date,
-                    region,
-                ),
-            }
-            buses = {
-                "applicable": True,
-                "options": _expand_ground_options(
-                    "bus",
-                    synthetic_modes.get("bus", {}),
-                    from_city,
-                    to_city,
-                    travel_date,
-                    region,
-                ),
-            }
 
     modes_for_value: List[Tuple[str, float]] = []
 
@@ -768,26 +977,24 @@ def get_transport_options(query: str) -> str:
     # Trains
     if data.get("trains", {}).get("applicable"):
         train = data["trains"]["options"][0]
-        source = "Live data" if train.get("source") == "live" else "Estimated"
-        operator = train.get("source") == "live" and train.get("operator", "Operator") or "Regional Railways"
+        operator = train.get("operator", "Rail operator")
         lines.append(
             f"🚂 TRAIN:  {operator:20s} | {train.get('journeyTime'):10s} | "
             f"{train.get('frequency'):15s} | {train.get('priceRange')}"
         )
     else:
-        lines.append(f"🚂 TRAIN:  Not available for this route.")
+        lines.append(f"🚂 TRAIN:  {data.get('trains', {}).get('message', 'Not available for this route.')}")
 
     # Buses
     if data.get("buses", {}).get("applicable"):
         bus = data["buses"]["options"][0]
-        source = "Live data" if bus.get("source") == "live" else "Estimated"
-        operator = bus.get("source") == "live" and bus.get("operator", "Operator") or "Regional/Budget Operators"
+        operator = bus.get("operator", "Bus operator")
         lines.append(
             f"🚌 BUS:    {operator:20s} | {bus.get('journeyTime'):10s} | "
             f"{bus.get('frequency'):15s} | {bus.get('priceRange')}"
         )
     else:
-        lines.append(f"🚌 BUS:    Not available for this route.")
+        lines.append(f"🚌 BUS:    {data.get('buses', {}).get('message', 'Not available for this route.')}")
 
     if data.get("bestValue"):
         lines.append("-" * 70)

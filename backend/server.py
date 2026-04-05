@@ -206,6 +206,102 @@ def _has_structured_itinerary(text: str) -> bool:
     return bool(re.search(r"(?:^|\n)(?:\*\*)?(?:#+\s*)?Day\s+1\b", text, flags=re.IGNORECASE))
 
 
+def _fetch_named_points_of_interest(destination: str, limit: int = 12) -> List[str]:
+    """Fetch concrete place names near destination using free geosearch endpoints."""
+    headers = {"User-Agent": "MusafirPlanner/1.0"}
+
+    fallback_catalog: Dict[str, List[str]] = {
+        "paris": ["Louvre Museum", "Eiffel Tower", "Musee d'Orsay", "Notre-Dame Cathedral", "Montmartre", "Sainte-Chapelle"],
+        "london": ["British Museum", "Tower of London", "Westminster Abbey", "St Paul's Cathedral", "Borough Market", "Hyde Park"],
+        "tokyo": ["Senso-ji", "Meiji Jingu", "Tokyo Skytree", "Shibuya Crossing", "Ueno Park", "Tsukiji Outer Market"],
+        "kyoto": ["Fushimi Inari Taisha", "Kinkaku-ji", "Arashiyama Bamboo Grove", "Kiyomizu-dera", "Nijo Castle", "Gion"],
+        "osaka": ["Osaka Castle", "Dotonbori", "Shitenno-ji", "Kuromon Ichiba Market", "Umeda Sky Building", "Sumiyoshi Taisha"],
+        "new york": ["Central Park", "Metropolitan Museum of Art", "Times Square", "Brooklyn Bridge", "High Line", "9/11 Memorial & Museum"],
+        "rome": ["Colosseum", "Roman Forum", "Trevi Fountain", "Pantheon", "Vatican Museums", "Piazza Navona"],
+        "barcelona": ["Sagrada Familia", "Park Guell", "Gothic Quarter", "Casa Batllo", "La Boqueria", "Montjuic"],
+        "amsterdam": ["Rijksmuseum", "Anne Frank House", "Van Gogh Museum", "Jordaan", "Vondelpark", "Dam Square"],
+        "bangkok": ["Grand Palace", "Wat Arun", "Wat Pho", "Chatuchak Market", "Jim Thompson House", "Asiatique The Riverfront"],
+        "singapore": ["Gardens by the Bay", "Marina Bay Sands", "Sentosa", "Merlion Park", "Singapore Botanic Gardens", "Chinatown Singapore"],
+        "dubai": ["Burj Khalifa", "Dubai Mall", "Al Fahidi Historical District", "Dubai Marina", "Museum of the Future", "Jumeirah Mosque"],
+        "sydney": ["Sydney Opera House", "Harbour Bridge", "Bondi Beach", "The Rocks", "Taronga Zoo", "Royal Botanic Garden Sydney"],
+        "mumbai": ["Gateway of India", "Chhatrapati Shivaji Maharaj Terminus", "Marine Drive", "Elephanta Caves", "Colaba Causeway", "Haji Ali Dargah"],
+        "delhi": ["Red Fort", "Qutub Minar", "Humayun's Tomb", "India Gate", "Jama Masjid", "Lodhi Garden"],
+        "goa": ["Basilica of Bom Jesus", "Fort Aguada", "Calangute Beach", "Dudhsagar Falls", "Anjuna Flea Market", "Chapora Fort"],
+        "shanghai": ["The Bund", "Yu Garden", "Shanghai Tower", "Nanjing Road", "Jing'an Temple", "Shanghai Museum"],
+    }
+
+    normalized_destination = (destination or "").strip().lower()
+
+    def _fallback_places() -> List[str]:
+        for key, places in fallback_catalog.items():
+            if key in normalized_destination or normalized_destination in key:
+                return places[:limit]
+        return []
+
+    try:
+        geo_response = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": destination, "format": "json", "limit": 1, "addressdetails": 1},
+            headers=headers,
+            timeout=8,
+        )
+        geo_response.raise_for_status()
+        geo_data = geo_response.json()
+        if not geo_data:
+            return _fallback_places()
+
+        lat = geo_data[0].get("lat")
+        lon = geo_data[0].get("lon")
+        if not lat or not lon:
+            return _fallback_places()
+
+        wiki_response = requests.get(
+            "https://en.wikipedia.org/w/api.php",
+            params={
+                "action": "query",
+                "list": "geosearch",
+                "gscoord": f"{lat}|{lon}",
+                "gsradius": 12000,
+                "gslimit": max(6, min(limit * 2, 50)),
+                "format": "json",
+            },
+            headers=headers,
+            timeout=8,
+        )
+        wiki_response.raise_for_status()
+        payload = wiki_response.json()
+        items = payload.get("query", {}).get("geosearch", [])
+
+        names: List[str] = []
+        seen = set()
+        for item in items:
+            title = (item.get("title") or "").strip()
+            if not title:
+                continue
+            lowered = title.lower()
+            if lowered.startswith("list of") or "disambiguation" in lowered:
+                continue
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            names.append(title)
+            if len(names) >= limit:
+                break
+
+        return names or _fallback_places()
+    except Exception:
+        return _fallback_places()
+
+
+def _attach_place_to_activity(activity: str, place_name: str) -> str:
+    """Attach a concrete place name while keeping original activity intent."""
+    if not place_name:
+        return activity
+    if place_name.lower() in activity.lower():
+        return activity
+    return f"{activity} at {place_name}"
+
+
 def _dynamic_itinerary_from_context(
     destination: str,
     duration: int,
@@ -359,6 +455,7 @@ def _dynamic_itinerary_from_context(
     }
 
     total_days = max(int(duration), 1)
+    named_places = _fetch_named_points_of_interest(destination, limit=max(9, total_days * 3))
     
     # Get activities for the selected travel style
     style_key = travel_style if travel_style in STYLE_ACTIVITIES else "Balanced"
@@ -378,6 +475,15 @@ def _dynamic_itinerary_from_context(
         morning_act = style_acts["morning"][morning_idx]
         afternoon_act = style_acts["afternoon"][afternoon_idx]
         evening_act = style_acts["evening"][evening_idx]
+
+        if named_places:
+            place_base = (day - 1) * 3
+            morning_place = named_places[place_base % len(named_places)]
+            afternoon_place = named_places[(place_base + 1) % len(named_places)]
+            evening_place = named_places[(place_base + 2) % len(named_places)]
+            morning_act = _attach_place_to_activity(morning_act, morning_place)
+            afternoon_act = _attach_place_to_activity(afternoon_act, afternoon_place)
+            evening_act = _attach_place_to_activity(evening_act, evening_place)
         
         # Add constraint note if present
         constraint_note = f" (respecting {constraints})" if constraints else ""
@@ -391,6 +497,10 @@ def _dynamic_itinerary_from_context(
     lines.append(f"## Budget Summary ({budget_level} Level):")
     lines.append(f"- Budget level: {budget_level}")
     lines.append("- Costs may vary based on season, specific venues, and current exchange rates.")
+    if named_places:
+        lines.append("- Includes concrete place suggestions from live web geosearch sources.")
+    else:
+        lines.append("- Live place-name lookup was unavailable; some activities may remain generic.")
     if constraints:
         lines.append(f"- Travel constraints considered: {constraints}")
     lines.append(f"- Includes accommodation, meals, activities, and local transport.")

@@ -21,7 +21,7 @@ Tools:
 - get_destination_info: Always call first to identify country, currency, and location context.
 - get_weather_forecast: Use second for weather and seasonal packing guidance.
 - search_flights: Use when user mentions origin city or asks about flights/transport costs.
-- get_transport_options: Use for domestic Indian routes or when user asks for train/bus options.
+- get_transport_options: Use for any route when user asks for train/bus options (global web search).
 - convert_currency: Use when budget or currency conversion is requested.
 - estimate_food_prices: Use to estimate food costs for the destination and duration.
 - calculate_trip_budget: Use to produce a structured budget summary.
@@ -38,7 +38,7 @@ Required tool calling order:
 1. get_destination_info (always first)
 2. get_weather_forecast
 3. search_flights (if origin city provided)
-4. get_transport_options (if domestic Indian route or multi-mode request)
+4. get_transport_options (if train/bus or multi-mode request)
 5. convert_currency (if budget mentioned)
 6. estimate_food_prices (when food costs are needed)
 7. calculate_trip_budget (when budget breakdown is requested)
