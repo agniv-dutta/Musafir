@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🌍 WANDR
+# 🌍 MUSAFIR
 
 **AI-Powered Travel Planning Made Simple**
 
@@ -14,7 +14,7 @@
 
 ### ✨ Intelligent Travel Companion Powered by ReAct Agent Framework
 
-Wandr uses an advanced AI agent orchestrated with **LangGraph ReAct** to intelligently plan your trips. It analyzes your preferences, destination context, and real-time data to generate personalized itineraries, dynamic budgets, weather insights, and transport recommendations.
+Musafir uses an advanced AI agent orchestrated with **LangGraph ReAct** to intelligently plan your trips. It analyzes your preferences, destination context, and real-time data to generate personalized itineraries, dynamic budgets, weather insights, and transport recommendations.
 
 ---
 
@@ -105,7 +105,7 @@ Wandr uses an advanced AI agent orchestrated with **LangGraph ReAct** to intelli
 ## 📁 Project Structure
 
 ```
-Wandr/
+Musafir/
 ├── backend/
 │   ├── agent_core.py              # ReAct agent with LangGraph orchestration
 │   ├── server.py                  # FastAPI application with all endpoints
@@ -198,7 +198,7 @@ Wandr/
 
 ```bash
 # Navigate to project root
-cd Wandr
+cd Musafir
 
 # Create Python virtual environment
 python -m venv .venv
@@ -628,7 +628,7 @@ The backend is configured to accept requests from:
 
 ```powershell
 # Windows PowerShell
-cd C:\Wandr
+cd C:\Musafir
 .\.venv\Scripts\Activate.ps1
 uvicorn backend.server:app --host 0.0.0.0 --port 8000 --reload
 ```
@@ -645,7 +645,7 @@ API docs available at: `http://localhost:8000/docs` (Swagger UI)
 #### Terminal 2: Start Frontend
 
 ```bash
-cd C:\Wandr\frontend
+cd C:\Musafir\frontend
 npm run dev
 ```
 
@@ -679,7 +679,7 @@ gunicorn backend.server:app --workers 4 --worker-class uvicorn.workers.UvicornWo
 ```bash
 # Clone and setup
 git clone <repository-url>
-cd Wandr
+cd Musafir
 
 # Backend setup
 python -m venv .venv
@@ -756,4 +756,4 @@ This project is open source and available under the MIT License.
 
 For issues, questions, or suggestions, please open an issue on the repository.
 
-Happy traveling with Wandr! ✈️🌎🗺️
+Happy traveling with Musafir! ✈️🌎🗺️
